@@ -98,12 +98,24 @@ app = FastAPI(
 # CORS
 # =========================================================
 
+configured_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in configured_origins.split(",")
+    if origin.strip()
+]
+
+for default_origin in [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://prompt-injection-lake.vercel.app",
+]:
+    if default_origin not in allowed_origins:
+        allowed_origins.append(default_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -841,6 +853,12 @@ def root() -> Dict[str, Any]:
             ),
         },
     }
+
+
+@app.head("/")
+def root_head() -> None:
+    """Support Render and other health probes that use HEAD."""
+    return None
 
 
 # =========================================================

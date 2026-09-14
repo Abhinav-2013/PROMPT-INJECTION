@@ -11,7 +11,7 @@ uvicorn[standard]
 python-multipart>=0.0.9
 pandas
 scipy
-scikit-learn
+scikit-learn==1.7.2
 joblib
 
 sentence-transformers
