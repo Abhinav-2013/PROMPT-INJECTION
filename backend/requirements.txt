@@ -6,3 +6,5 @@ sentence-transformers>=3.0
 
 # Optional: advanced NLP later
 spacy>=3.7
+fastapi
+uvicorn[standard]
