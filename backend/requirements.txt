@@ -1,0 +1,8 @@
+# Required
+numpy>=1.26
+
+# Optional: semantic embeddings
+sentence-transformers>=3.0
+
+# Optional: advanced NLP later
+spacy>=3.7
