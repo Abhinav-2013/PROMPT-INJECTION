@@ -108,7 +108,7 @@ allowed_origins = [
 for default_origin in [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://prompt-injection-lake.vercel.app",
+    "https://frontend-production-400c.up.railway.app",
 ]:
     if default_origin not in allowed_origins:
         allowed_origins.append(default_origin)
