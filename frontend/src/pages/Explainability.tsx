@@ -440,6 +440,12 @@ function Explainability() {
                   ? 'Malicious'
                   : 'Benign'}
               </p>
+
+              <p className="mt-1 text-sm text-slate-500">
+                {(
+                  explanation.xai.probability_malicious * 100
+                ).toFixed(1)}% malicious probability
+              </p>
             </div>
           )}
         </div>

@@ -186,6 +186,7 @@ export interface DocumentChunkResult {
   page_number?: number
   page_chunk_index?: number
   text?: string
+  full_result?: AnalyzeResponse
 
   threat_score?: number
   decision?: Decision

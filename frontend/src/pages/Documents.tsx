@@ -9,6 +9,7 @@ import {
   Trash2,
   UploadCloud,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 import GlassPanel from '../components/GlassPanel'
 import {
@@ -16,7 +17,10 @@ import {
   type DocumentScanResponse,
 } from '../api/athsApi'
 import type { DocumentScanResult } from '../api/types'
-import type { DocumentHistoryEntry } from '../api/types'
+import type {
+  DocumentChunkResult,
+  DocumentHistoryEntry,
+} from '../api/types'
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024
 const ACCEPTED_TYPES = ['.pdf', '.docx', '.txt']
@@ -320,11 +324,28 @@ function DocumentResults({
 }: {
   result: DocumentScanResult
 }) {
+  const navigate = useNavigate()
   const decision = result.document_decision
   const severity = result.document_severity
 
   const isBlocked = decision === 'BLOCK'
   const isReview = decision === 'REVIEW'
+  const explainableChunk = getMostRelevantChunk(result.results)
+
+  const openExplainability = () => {
+    const analysis = getChunkAnalysis(explainableChunk)
+
+    if (!analysis) {
+      return
+    }
+
+    sessionStorage.setItem(
+      'latestAnalysis',
+      JSON.stringify(analysis),
+    )
+
+    navigate('/explainability')
+  }
 
   return (
     <div className="mt-5 space-y-5">
@@ -357,6 +378,17 @@ function DocumentResults({
             {decision}
           </div>
         </div>
+
+        {explainableChunk && getChunkAnalysis(explainableChunk) && (
+          <button
+            type="button"
+            onClick={openExplainability}
+            className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/55 px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-white/75"
+          >
+            <ShieldAlert className="h-4 w-4" />
+            View Explainability
+          </button>
+        )}
 
         <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
@@ -476,9 +508,67 @@ function DocumentResults({
               </p>
             </div>
           </div>
+
+          {explainableChunk && getChunkAnalysis(explainableChunk) && (
+            <button
+              type="button"
+              onClick={openExplainability}
+              className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/55 px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-white/75"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Explain the document result
+            </button>
+          )}
         </GlassPanel>
       )}
     </div>
+  )
+}
+
+function getMostRelevantChunk(
+  results: DocumentScanResult['results'],
+): Record<string, unknown> | null {
+  const chunks = results.filter(
+    (item): item is Record<string, unknown> =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item),
+  )
+
+  return (
+    [...chunks].sort(
+      (left, right) =>
+        (getNumber(right, 'threat_score') ?? 0) -
+        (getNumber(left, 'threat_score') ?? 0),
+    )[0] ?? null
+  )
+}
+
+function getChunkAnalysis(
+  chunk: Record<string, unknown> | null,
+) {
+  const analysis = chunk?.full_result
+
+  return isAnalyzeResponse(analysis) ? analysis : null
+}
+
+function isAnalyzeResponse(
+  value: unknown,
+): value is NonNullable<DocumentChunkResult['full_result']> {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  const analysis = value as Record<string, unknown>
+
+  return (
+    typeof analysis.text === 'string' &&
+    typeof analysis.threat_score === 'number' &&
+    typeof analysis.decision === 'string' &&
+    typeof analysis.ml === 'object' &&
+    typeof analysis.rules === 'object' &&
+    typeof analysis.semantic === 'object' &&
+    typeof analysis.fusion === 'object'
   )
 }
 
