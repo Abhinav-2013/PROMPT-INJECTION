@@ -24,7 +24,8 @@ export interface AnalyzeResponse {
   confidence?: number
   recommended_action?: string
   hypotheses?: HypothesisResult[]
-  evidence?: EvidenceItem[]
+  evidence?: Array<EvidenceItem | string>
+  explainability?: UnifiedExplainability
 }
 
 export type Decision = 'ALLOW' | 'REVIEW' | 'BLOCK'
@@ -175,6 +176,36 @@ export interface ExplainResponse {
   feature_count: number
   embedding_dimension: number
   xai: SHAPExplanation
+  logistic_regression?: LogisticExplanation
+}
+
+export interface UnifiedExplainability {
+  status: 'success' | 'partial' | 'failed' | string
+  random_forest?: SHAPExplanation | null
+  logistic_regression?: LogisticExplanation | null
+  rules?: RuleResult
+  semantic?: SemanticResult
+  threat_fusion?: FusionResult
+  hypothesis?: HypothesisResult | null
+  errors?: Array<{ source?: string; message?: string }>
+}
+
+export interface LogisticContribution {
+  feature: string
+  value: number
+  scaled_value: number
+  coefficient: number
+  contribution: number
+  direction: SHAPDirection
+}
+
+export interface LogisticExplanation {
+  prediction: number
+  probability_benign: number
+  probability_malicious: number
+  intercept: number
+  feature_contributions: LogisticContribution[]
+  top_features: LogisticContribution[]
 }
 
 /* -------------------------------------------------------------------------- */
@@ -211,6 +242,14 @@ export interface DocumentScanResult {
   threat_chunks: number
 
   results: DocumentChunkResult[]
+  document_explanation?: DocumentExplanation
+}
+
+export interface DocumentExplanation {
+  primary_hypothesis: string
+  decision: Decision
+  supporting_evidence: string[]
+  threat_chunk_count: number
 }
 
 export interface DocumentScanResponse {

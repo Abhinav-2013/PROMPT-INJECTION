@@ -30,6 +30,7 @@ from detection.feature_loader import ML_FEATURE_COLUMNS
 from preprocessing.pipeline import PreprocessingPipeline
 
 from document.document_extractor import ATHSDocumentExtractor
+from xai.unified_explainer import ATHSUnifiedExplainer
 
 
 class ATHSDocumentScanner:
@@ -50,6 +51,7 @@ class ATHSDocumentScanner:
         )
 
         self.engine = ATHSThreatDetectionEngine()
+        self.unified_explainer = ATHSUnifiedExplainer()
 
         print("ATHS Document Scanner initialized.")
 
@@ -187,6 +189,36 @@ class ATHSDocumentScanner:
             embedding=embedding,
         )
 
+        self._apply_clean_document_safeguard(
+            result=result,
+            processed=processed,
+        )
+
+        try:
+            result["explainability"] = self.unified_explainer.explain(
+                analysis=result,
+                feature_vector=feature_vector,
+            )
+            hypothesis = result["explainability"].get("hypothesis")
+            if isinstance(hypothesis, dict):
+                result.update({
+                    key: hypothesis[key]
+                    for key in (
+                        "hypothesis",
+                        "description",
+                        "confidence",
+                        "recommended_action",
+                        "hypotheses",
+                        "evidence",
+                    )
+                    if key in hypothesis
+                })
+        except Exception as exc:
+            result["explainability"] = {
+                "status": "failed",
+                "errors": [{"source": "unified", "message": str(exc)}],
+            }
+
         return {
             "chunk_index": chunk_index,
             "text": chunk,
@@ -201,6 +233,65 @@ class ATHSDocumentScanner:
             "detector_votes": result["detector_votes"],
             "full_result": result,
         }
+
+    @staticmethod
+    def _apply_clean_document_safeguard(
+        result: Dict[str, Any],
+        processed: Dict[str, Any],
+    ) -> None:
+        """Prevent isolated ML spikes from blocking normal document prose."""
+        nlp = processed.get("nlp", {})
+        security = processed.get("security_features", {})
+        rules = result.get("rules", {})
+        semantic = result.get("semantic", {})
+
+        word_count = int(nlp.get("word_count", 0))
+        sentence_count = int(nlp.get("sentence_count", 0))
+        rule_categories = set(rules.get("categories", []))
+        semantic_malicious = bool(
+            semantic.get("is_threat", False)
+            or float(semantic.get("score", 0.0)) > 0.0
+            or semantic.get("high_confidence", False)
+        )
+
+        strong_features = {
+            "instruction_override",
+            "system_prompt_reference",
+            "role_change_attempt",
+            "data_extraction_attempt",
+            "tool_manipulation",
+            "policy_bypass",
+            "prompt_leakage",
+        }
+
+        has_strong_feature = any(
+            bool(security.get(feature, 0))
+            for feature in strong_features
+        )
+
+        only_contextual_sensitive_data = (
+            rule_categories
+            and rule_categories <= {"sensitive_data_reference"}
+        )
+
+        is_normal_prose = (
+            word_count >= 30
+            and sentence_count >= 3
+            and not has_strong_feature
+            and not semantic_malicious
+            and (
+                float(rules.get("score", 0.0)) == 0.0
+                or only_contextual_sensitive_data
+            )
+        )
+
+        if not is_normal_prose:
+            return
+
+        result["decision"] = "ALLOW"
+        result["severity"] = "LOW"
+        result["threat_score"] = 0.0
+        result.setdefault("fusion", {})["decision"] = "ALLOW"
 
     # =============================================================
     # OVERALL DOCUMENT DECISION
@@ -264,6 +355,36 @@ class ATHSDocumentScanner:
                 highest = severity
 
         return highest
+
+    def _build_document_explanation(
+        self,
+        results: List[Dict[str, Any]],
+        decision: str,
+    ) -> Dict[str, Any]:
+        hypotheses = [
+            (result.get("full_result") or result).get("hypothesis")
+            for result in results
+            if isinstance(
+                (result.get("full_result") or result).get("hypothesis"),
+                str,
+            )
+        ]
+        primary = hypotheses[0] if hypotheses else "No Threat Detected"
+        evidence = [
+            item
+            for result in results
+            for item in (result.get("full_result") or result).get("evidence", [])
+            if isinstance(item, str)
+        ]
+        return {
+            "primary_hypothesis": primary,
+            "decision": decision,
+            "supporting_evidence": list(dict.fromkeys(evidence))[:10],
+            "threat_chunk_count": sum(
+                result["decision"] in {"REVIEW", "BLOCK"}
+                for result in results
+            ),
+        }
 
     # =============================================================
     # COMPLETE DOCUMENT SCAN
@@ -370,6 +491,10 @@ class ATHSDocumentScanner:
             "chunk_count": len(results),
             "document_decision": document_decision,
             "document_severity": document_severity,
+            "document_explanation": self._build_document_explanation(
+                results,
+                document_decision,
+            ),
             "threat_chunks": len(threat_results),
             "detected_pages": detected_pages,
             "review_pages": review_pages,

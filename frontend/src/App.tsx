@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   Activity,
   FileSearch,
+  FileChartColumn,
   History,
   Menu,
   ShieldCheck,
@@ -20,6 +21,7 @@ import Dashboard from './pages/Dashboard'
 import Analyze from './pages/Analyze'
 import Documents from './pages/Documents'
 import Explainability from './pages/Explainability'
+import ChunkExplainability from './pages/ChunkExplainability'
 import HistoryPage from './pages/History'
 import SystemStatus from './pages/SystemStatus'
 
@@ -104,6 +106,7 @@ function App() {
               <NavigationItem to="/analyze" label="Analyze" />
               <NavigationItem to="/documents" label="Documents" />
               <NavigationItem to="/explainability" label="Explainability" />
+              <NavigationItem to="/chunk-explainability" label="Document Explainability" />
               <NavigationItem to="/history" label="History" />
 
             </div>
@@ -168,6 +171,7 @@ function App() {
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/explainability" element={<Explainability />} />
+            <Route path="/chunk-explainability" element={<ChunkExplainability />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/status" element={<SystemStatus />} />
           </Routes>
@@ -236,6 +240,11 @@ function MobileNavigation({
       to: '/status',
       label: 'System Status',
       icon: <ShieldCheck className="h-4 w-4" />,
+    },
+    {
+      to: '/chunk-explainability',
+      label: 'Document Explainability',
+      icon: <FileChartColumn className="h-4 w-4" />,
     },
   ]
 

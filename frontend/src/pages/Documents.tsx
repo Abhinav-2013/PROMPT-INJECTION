@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock3,
   FileSearch,
   FileText,
   LoaderCircle,
@@ -29,6 +30,7 @@ const MAX_HISTORY_ITEMS = 50
 
 function Documents() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const navigate = useNavigate()
 
   const [files, setFiles] = useState<File[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -67,11 +69,19 @@ function Documents() {
     }
 
     if (validFiles.length === 0) {
-      setFiles([])
       return
     }
 
-    setFiles(validFiles)
+    setFiles((currentFiles) => {
+      const combined = [...currentFiles, ...validFiles]
+      const unique = new Map(
+        combined.map((file) => [
+          `${file.name}-${file.size}-${file.lastModified}`,
+          file,
+        ]),
+      )
+      return [...unique.values()]
+    })
   }
 
   const handleFileInput = (
@@ -119,6 +129,10 @@ function Documents() {
       const scanResult = await scanDocument(files)
 
       setResult(scanResult)
+      sessionStorage.setItem(
+        'latestDocumentScan',
+        JSON.stringify(scanResult),
+      )
       saveDocumentsToHistory(scanResult.documents)
       setMessage(`${scanResult.successful_documents} document(s) analyzed.`)
     } catch (error) {
@@ -288,6 +302,27 @@ function Documents() {
               </GlassPanel>
             )
           ))}
+
+          <GlassPanel className="p-6 sm:p-8">
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/chunk-explainability')}
+                className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/45 px-5 py-3 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+              >
+                <ShieldAlert className="h-4 w-4" />
+                View Document Explainability
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/history')}
+                className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/45 px-5 py-3 text-sm font-medium text-slate-700 shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+              >
+                <Clock3 className="h-4 w-4" />
+                View History
+              </button>
+            </div>
+          </GlassPanel>
         </div>
       )}
     </div>
@@ -333,18 +368,28 @@ function DocumentResults({
   const explainableChunk = getMostRelevantChunk(result.results)
 
   const openExplainability = () => {
-    const analysis = getChunkAnalysis(explainableChunk)
-
-    if (!analysis) {
+    if (!explainableChunk) {
       return
     }
 
     sessionStorage.setItem(
-      'latestAnalysis',
-      JSON.stringify(analysis),
+      'latestDocumentScan',
+      JSON.stringify({
+        status: 'success',
+        document_count: 1,
+        successful_documents: 1,
+        failed_documents: 0,
+        overall_decision: result.document_decision,
+        documents: [{
+          filename: result.file_name,
+          file_type: result.file_type,
+          status: 'success',
+          result,
+        }],
+      }),
     )
 
-    navigate('/explainability')
+    navigate('/chunk-explainability')
   }
 
   return (
@@ -411,6 +456,31 @@ function DocumentResults({
             value={result.threat_chunks}
           />
         </div>
+
+        <div className="mt-7 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={openExplainability}
+            disabled={!explainableChunk}
+            className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/55 px-5 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-white/75 hover:shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ShieldAlert className="h-4 w-4" />
+            View Explainability
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/history')}
+            className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/55 px-5 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-white/75 hover:shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+          >
+            <Clock3 className="h-4 w-4" />
+            View History
+          </button>
+        </div>
+
+        {explainableChunk && (
+          <DocumentDetectorEvidence chunk={explainableChunk} />
+        )}
       </GlassPanel>
 
       <GlassPanel className="p-6 sm:p-8">
@@ -521,6 +591,32 @@ function DocumentResults({
           )}
         </GlassPanel>
       )}
+    </div>
+  )
+}
+
+function DocumentDetectorEvidence({
+  chunk,
+}: {
+  chunk: Record<string, unknown>
+}) {
+  const analysis = getChunkAnalysis(chunk)
+  if (!analysis) return null
+
+  return (
+    <div className="mt-7 rounded-2xl border border-white/70 bg-white/35 p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Detector evidence</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <InfoItem label="Rule score" value={`${(analysis.rules.score * 100).toFixed(1)}%`} />
+        <InfoItem label="Semantic similarity" value={`${(analysis.semantic.similarity * 100).toFixed(1)}%`} />
+        <InfoItem label="Semantic threat score" value={`${(analysis.semantic.score * 100).toFixed(1)}%`} />
+      </div>
+      <p className="mt-4 text-sm leading-6 text-slate-600">
+        Rules: {analysis.rules.matched_rules.map((rule) => rule.matched_patterns.join(', ')).join('; ') || 'none matched'}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">
+        Semantic match: {analysis.semantic.matched_text || 'no matching malicious example'}
+      </p>
     </div>
   )
 }

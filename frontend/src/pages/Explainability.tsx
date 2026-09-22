@@ -28,7 +28,9 @@ function Explainability() {
     }
 
     try {
-      return JSON.parse(stored) as AnalyzeResponse
+      return normalizeAnalysisResponse(
+        JSON.parse(stored) as AnalyzeResponse,
+      )
     } catch {
       sessionStorage.removeItem('latestAnalysis')
       return null
@@ -399,6 +401,66 @@ function Explainability() {
         )}
       </GlassPanel>
 
+      <LogisticRegressionPanel
+        analysis={analysis}
+        fallback={explanation?.logistic_regression}
+      />
+
+      <GlassPanel className="mt-5 p-7 sm:p-9">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="h-5 w-5 text-slate-500" />
+          <div>
+            <h2 className="text-lg font-semibold">Behavior rule analysis</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Exact rule categories and matched patterns returned by the backend.
+            </p>
+          </div>
+        </div>
+
+        {analysis.rules.matched_rules.length > 0 ? (
+          <div className="mt-6 space-y-3">
+            {analysis.rules.matched_rules.map((rule) => (
+              <div key={rule.rule} className="rounded-2xl border border-white/70 bg-white/35 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-medium text-slate-800">{rule.rule}</p>
+                  <span className="rounded-full bg-white/60 px-3 py-1 text-xs text-slate-500">{rule.category} · weight {rule.weight.toFixed(2)}</span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Matched: {rule.matched_patterns.join(', ')}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-6 text-sm text-slate-400">No behavior rules matched this prompt.</p>
+        )}
+      </GlassPanel>
+
+      <GlassPanel className="mt-5 p-7 sm:p-9">
+        <div className="flex items-center gap-3">
+          <GitBranch className="h-5 w-5 text-slate-500" />
+          <div>
+            <h2 className="text-lg font-semibold">Semantic similarity evidence</h2>
+            <p className="mt-1 text-sm text-slate-400">Nearest dataset examples used by the semantic detector.</p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <EvidenceValue label="Similarity" value={`${(analysis.semantic.similarity * 100).toFixed(1)}%`} />
+          <EvidenceValue label="Threat score" value={`${(analysis.semantic.score * 100).toFixed(1)}%`} />
+          <EvidenceValue label="Malicious neighbors" value={String(analysis.semantic.malicious_neighbor_count ?? 0)} />
+        </div>
+
+        <div className="mt-6 space-y-3">
+          {(analysis.semantic.top_neighbors ?? []).map((neighbor, index) => (
+            <div key={`${neighbor.index ?? index}-${neighbor.text ?? ''}`} className="rounded-2xl border border-white/70 bg-white/35 p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-slate-400">
+                Neighbor {index + 1} · {typeof neighbor.similarity === 'number' ? `${(neighbor.similarity * 100).toFixed(1)}%` : 'N/A'} · {neighbor.label === 1 ? 'malicious' : 'benign'}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{neighbor.text || 'Matching text unavailable.'}</p>
+            </div>
+          ))}
+        </div>
+      </GlassPanel>
+
       {/* ------------------------------------------------------------------ */}
       {/* SHAP explainability                                                 */}
       {/* ------------------------------------------------------------------ */}
@@ -488,6 +550,94 @@ function Explainability() {
       </GlassPanel>
     </div>
   )
+}
+
+function LogisticRegressionPanel({
+  analysis,
+  fallback,
+}: {
+  analysis: AnalyzeResponse
+  fallback?: NonNullable<ExplainResponse['logistic_regression']>
+}) {
+  const explanation = analysis.explainability?.logistic_regression ?? fallback
+
+  return (
+    <GlassPanel className="mt-5 p-7 sm:p-9">
+      <div className="flex items-center gap-3">
+        <BrainCircuit className="h-5 w-5 text-slate-500" />
+        <div>
+          <h2 className="text-lg font-semibold">Logistic Regression explanation</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Coefficients multiplied by scaled feature values show the linear model&apos;s contribution.
+          </p>
+        </div>
+      </div>
+
+      {explanation ? (
+        <>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <EvidenceValue label="Prediction" value={explanation.prediction === 1 ? 'Malicious' : 'Benign'} />
+            <EvidenceValue label="Malicious probability" value={`${(explanation.probability_malicious * 100).toFixed(1)}%`} />
+            <EvidenceValue label="Intercept" value={explanation.intercept.toFixed(4)} />
+          </div>
+          <div className="mt-6 space-y-3">
+            {explanation.top_features.map((feature) => (
+              <div key={feature.feature} className="rounded-2xl border border-white/70 bg-white/35 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium text-slate-800">{formatFeatureName(feature.feature)}</span>
+                  <span className="text-sm font-semibold text-slate-600">{feature.contribution >= 0 ? '+' : ''}{feature.contribution.toFixed(4)}</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">Coefficient {feature.coefficient.toFixed(4)} · scaled value {feature.scaled_value.toFixed(4)} · {feature.direction.replace('_', ' ')}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="mt-6 text-sm text-slate-400">Logistic Regression explanation was not returned for this stored analysis. Run the prompt again to refresh it.</p>
+      )}
+    </GlassPanel>
+  )
+}
+
+function normalizeAnalysisResponse(
+  response: AnalyzeResponse,
+): AnalyzeResponse {
+  const unifiedRules = response.explainability?.rules
+  const rawRules = (response.rules ?? {}) as AnalyzeResponse['rules'] & {
+    rule_score?: number
+    score?: number
+  }
+  const matchedRules = rawRules.matched_rules?.length
+    ? rawRules.matched_rules
+    : unifiedRules?.matched_rules ?? []
+  const categories = rawRules.categories?.length
+    ? rawRules.categories
+    : unifiedRules?.categories?.length
+      ? unifiedRules.categories
+    : matchedRules
+        .map((rule) => rule.category)
+        .filter((category): category is string => Boolean(category))
+  const unifiedSemantic = response.explainability?.semantic
+  const rawSemantic = (response.semantic ?? {}) as AnalyzeResponse['semantic'] & {
+    similarity_score?: number
+    semantic_threat_score?: number
+  }
+
+  return {
+    ...response,
+    rules: {
+      ...rawRules,
+      score: rawRules.score ?? rawRules.rule_score ?? 0,
+      categories: [...new Set(categories)],
+      matched_rules: matchedRules,
+    },
+    semantic: {
+      ...rawSemantic,
+      similarity: rawSemantic.similarity ?? rawSemantic.similarity_score ?? unifiedSemantic?.similarity ?? 0,
+      score: rawSemantic.score ?? rawSemantic.semantic_threat_score ?? unifiedSemantic?.score ?? 0,
+      threat_score: rawSemantic.threat_score ?? rawSemantic.semantic_threat_score ?? unifiedSemantic?.threat_score ?? 0,
+    },
+  }
 }
 
 /* ========================================================================== */

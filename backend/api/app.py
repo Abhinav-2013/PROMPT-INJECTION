@@ -45,6 +45,7 @@ from detection.feature_loader import ML_FEATURE_COLUMNS
 from preprocessing.pipeline import PreprocessingPipeline
 from document.document_scanner import ATHSDocumentScanner
 from xai.explainer import ATHSXAIExplainer
+from xai.unified_explainer import ATHSUnifiedExplainer
 from retraining.retrain_model import (
     ATHSModelRetrainer,
 )
@@ -174,6 +175,7 @@ document_scanner = ATHSDocumentScanner(
 )
 
 xai_explainer = ATHSXAIExplainer()
+unified_explainer = ATHSUnifiedExplainer()
 
 # Prevent simultaneous background retraining jobs.
 _retraining_lock = threading.Lock()
@@ -935,6 +937,33 @@ def analyze_prompt(
             embedding=embedding,
         )
 
+        try:
+            result["explainability"] = unified_explainer.explain(
+                analysis=result,
+                feature_vector=feature_vector,
+            )
+
+            hypothesis = result["explainability"].get("hypothesis")
+            if isinstance(hypothesis, dict):
+                result.update({
+                    key: hypothesis[key]
+                    for key in (
+                        "hypothesis",
+                        "description",
+                        "confidence",
+                        "recommended_action",
+                        "hypotheses",
+                        "evidence",
+                    )
+                    if key in hypothesis
+                })
+        except Exception as exc:
+            # Explanations must never prevent a detection response.
+            result["explainability"] = {
+                "status": "failed",
+                "errors": [{"source": "unified", "message": str(exc)}],
+            }
+
         # -------------------------------------------------
         # 3. Store prediction
         # -------------------------------------------------
@@ -1118,6 +1147,13 @@ def explain_prompt(
             )
         )
 
+        logistic_explanation = (
+            unified_explainer._logistic_explanation(
+                feature_vector,
+                unified_explainer.logistic_regression,
+            )
+        )
+
         return {
             "status": "success",
             "prompt": text,
@@ -1128,6 +1164,7 @@ def explain_prompt(
                 embedding.shape[0]
             ),
             "xai": explanation,
+            "logistic_regression": logistic_explanation,
         }
 
     except HTTPException:
@@ -1269,6 +1306,9 @@ async def scan_documents(
                 temp_path = temp_file.name
 
             scan_result = document_scanner.scan(temp_path)
+            # The scanner uses a temporary path internally. Preserve the
+            # original client filename in every user-facing response.
+            scan_result["file_name"] = filename
 
             documents.append({
                 "filename": filename,

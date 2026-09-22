@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   AlertCircle,
+  BrainCircuit,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -37,7 +38,9 @@ function Analyze() {
     }
 
     try {
-      return JSON.parse(stored) as AnalyzeResponse
+      return normalizeAnalysisResponse(
+        JSON.parse(stored) as AnalyzeResponse,
+      )
     } catch {
       sessionStorage.removeItem('latestAnalysis')
       return null
@@ -104,14 +107,16 @@ function Analyze() {
         text: cleanText,
       })
 
-      setResult(response)
+      const normalizedResponse = normalizeAnalysisResponse(response)
+
+      setResult(normalizedResponse)
 
       sessionStorage.setItem(
         'latestAnalysis',
-        JSON.stringify(response),
+        JSON.stringify(normalizedResponse),
       )
 
-      saveToHistory(response)
+      saveToHistory(normalizedResponse)
     } catch (error) {
       const message =
         typeof error === 'object' &&
@@ -303,6 +308,8 @@ function Analyze() {
 
           <RulesSection result={result} />
 
+          <PromptLogisticRegression result={result} />
+
           <FusionSection result={result} />
 
           <FeedbackSection
@@ -337,6 +344,48 @@ function Analyze() {
       )}
     </div>
   )
+}
+
+function normalizeAnalysisResponse(
+  response: AnalyzeResponse,
+): AnalyzeResponse {
+  const unifiedRules = response.explainability?.rules
+  const rawRules = (response.rules ?? {}) as AnalyzeResponse['rules'] & {
+    rule_score?: number
+    score?: number
+  }
+  const matchedRules = rawRules.matched_rules?.length
+    ? rawRules.matched_rules
+    : unifiedRules?.matched_rules ?? []
+  const categories = rawRules.categories?.length
+    ? rawRules.categories
+    : unifiedRules?.categories?.length
+      ? unifiedRules.categories
+    : matchedRules
+        .map((rule) => rule.category)
+        .filter((category): category is string => Boolean(category))
+
+  const unifiedSemantic = response.explainability?.semantic
+  const rawSemantic = (response.semantic ?? {}) as AnalyzeResponse['semantic'] & {
+    similarity_score?: number
+    semantic_threat_score?: number
+  }
+
+  return {
+    ...response,
+    rules: {
+      ...rawRules,
+      score: rawRules.score ?? rawRules.rule_score ?? 0,
+      categories: [...new Set(categories)],
+      matched_rules: matchedRules,
+    },
+    semantic: {
+      ...rawSemantic,
+      similarity: rawSemantic.similarity ?? rawSemantic.similarity_score ?? unifiedSemantic?.similarity ?? 0,
+      score: rawSemantic.score ?? rawSemantic.semantic_threat_score ?? unifiedSemantic?.score ?? 0,
+      threat_score: rawSemantic.threat_score ?? rawSemantic.semantic_threat_score ?? unifiedSemantic?.threat_score ?? 0,
+    },
+  }
 }
 
 function ResultSummary({
@@ -461,7 +510,7 @@ function DetectorBreakdown({
 
         <DetectorBar
           label="Semantic similarity"
-          value={result.semantic.score}
+          value={result.semantic.similarity}
           threat={result.semantic.is_threat}
         />
       </div>
@@ -493,6 +542,10 @@ function DetectorBreakdown({
             {result.detector_votes.total}/3
           </span>
         </div>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-white/70 bg-white/30 p-4 text-sm text-slate-500">
+        Semantic threat contribution: {(result.semantic.score * 100).toFixed(1)}% · matched label: {result.semantic.matched_label === 1 ? 'malicious' : 'benign'}
       </div>
     </GlassPanel>
   )
@@ -534,6 +587,46 @@ function DetectorBar({
         {threat ? 'Threat' : 'Non-threat'}
       </p>
     </div>
+  )
+}
+
+function PromptLogisticRegression({
+  result,
+}: {
+  result: AnalyzeResponse
+}) {
+  const explanation = result.explainability?.logistic_regression
+
+  return (
+    <GlassPanel className="p-7 sm:p-9">
+      <div className="flex items-center gap-3">
+        <BrainCircuit className="h-5 w-5 text-slate-500" />
+        <div>
+          <h2 className="text-lg font-semibold">Logistic Regression explainability</h2>
+          <p className="mt-1 text-sm text-slate-400">Linear-model coefficients and scaled feature contributions for this prompt.</p>
+        </div>
+      </div>
+
+      {explanation ? (
+        <>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <InfoBox label="Prediction" value={explanation.prediction === 1 ? 'Malicious' : 'Benign'} />
+            <InfoBox label="Malicious probability" value={`${(explanation.probability_malicious * 100).toFixed(1)}%`} />
+            <InfoBox label="Intercept" value={explanation.intercept.toFixed(4)} />
+          </div>
+          <div className="mt-6 space-y-2">
+            {explanation.top_features.map((feature) => (
+              <div key={feature.feature} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/35 px-4 py-3 text-sm">
+                <span className="font-medium text-slate-700">{feature.feature}</span>
+                <span className="text-slate-500">Contribution {feature.contribution >= 0 ? '+' : ''}{feature.contribution.toFixed(4)} · coefficient {feature.coefficient.toFixed(4)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="mt-6 text-sm text-slate-400">Logistic Regression data is unavailable in this result. Run the analysis again after refreshing the backend.</p>
+      )}
+    </GlassPanel>
   )
 }
 
