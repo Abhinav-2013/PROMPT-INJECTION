@@ -15,7 +15,7 @@ export type { DocumentScanResponse } from './types'
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ||
-  'https://prompt-injection-lqys.onrender.com'
+  '/api'
 ).replace(/\/+$/, '')
 
 async function request<T>(
