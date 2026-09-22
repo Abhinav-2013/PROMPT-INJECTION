@@ -26,6 +26,11 @@ class RuleThreatDetector:
                 "patterns": [
                     "ignore previous instructions",
                     "ignore all previous instructions",
+                    "ignore all instructions",
+                    "ignore these instructions",
+                    "ignore the instructions",
+                    "ignore your instructions",
+                    "ignore every instruction",
                     "ignore the previous instructions",
                     "disregard previous instructions",
                     "disregard all previous instructions",

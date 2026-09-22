@@ -4,6 +4,7 @@ import re
 PATTERNS = {
     "instruction_override": [
         r"\bignore (all )?(previous|prior|above) instructions\b",
+        r"\bignore (all|these|the|your|every) instructions\b",
         r"\bdisregard (all )?(previous|prior|above) instructions\b",
         r"\bforget (all )?(previous|prior|above) instructions\b",
         r"\boverride (your|the) instructions\b",
